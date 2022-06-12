@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
+from itertools import count
 from flask_pydantic_spec import FlaskPydanticSpec, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from tinydb import TinyDB, Query
 from typing import Optional
 import math
@@ -11,9 +12,10 @@ server = Flask(__name__) # iniciando flask
 spec = FlaskPydanticSpec('flask', title='Learning') #iniciando swagger
 spec.register(server) 
 db = TinyDB('database.json') #iniciando db
+c = count()
 
 class Pessoa(BaseModel):
-    id: Optional[int]
+    id: Optional[int] = Field(default_factory= lambda: next(c))
     nome: str
     idade: int 
 
@@ -21,16 +23,15 @@ class Pessoas(BaseModel):
     pessoas: list[Pessoa]
     count: int
 
-@server.get('/pessoas')
-@spec.validate(resp=Response(HTTP_200=Pessoas))
-def buscar_pessoas():
+@server.get('/pessoas/<int:id>')
+@spec.validate(resp=Response(HTTP_200=Pessoa))
+def buscar_pessoa(id):
     """Retornar todas as pessoas do db"""
-    return jsonify(
-        Pessoas(
-            pessoas=db.all(),
-            count=len(db.all())
-        ).dict()
-    )
+    try:
+        pessoa = db.search(Query().id == id)[0]
+    except IndexError:
+        return {'message': 'Pessoa not found'}, 404
+    return jsonify(pessoa)
 
 @server.post('/pessoas')
 @spec.validate(body=Request(Pessoa), resp=Response(HTTP_200=Pessoa))
@@ -42,7 +43,7 @@ def inserir_pessoas():
 
 @server.put('/pessoas/<int:id>')
 @spec.validate(
-    body=Request(Pessoa), resp=Response(HTTP_200=Pessoa)
+    body=Request(Pessoa), resp=Response(HTTP_201=Pessoa)
 )
 def altera_pessoa(id):
     """Altera pessoas no db com base no id"""
@@ -53,8 +54,7 @@ def altera_pessoa(id):
 
 
 @server.delete('/pessoas/<int:id>')
-@spec.validate(
-    body=Request(Pessoa), resp=Response('HTTP_200')
+@spec.validate(resp=Response('HTTP_204')
 )
 def deleta_pessoa(id):
     """Deleta pessoas no db com base no id"""
